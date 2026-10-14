@@ -9,13 +9,13 @@
 <style>
   :root {
     --bg: #f7f7f5; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dd;
-    --accent: #c2410c; --accent-soft: #fdeee6; --ok: #15803d; --err: #b91c1c;
+    --accent: #c2410c; --accent-soft: #fdeee6; --ok: #15803d; --ok-soft: #e6f4ea; --err: #b91c1c;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #151514; --panel: #1f1f1d; --text: #ecece8; --muted: #9a9a93; --line: #34342f;
-      --accent: #fb923c; --accent-soft: #3a2418; --ok: #4ade80; --err: #f87171;
+      --accent: #fb923c; --accent-soft: #3a2418; --ok: #4ade80; --ok-soft: #14291b; --err: #f87171;
       color-scheme: dark;
     }
   }
@@ -23,7 +23,8 @@
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   main { max-width: 1240px; margin: 0 auto; padding: 32px 16px 48px; }
   h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .lead { color: var(--muted); margin: 0 0 24px; }
+  .lead { color: var(--muted); margin: 0 0 12px; }
+  .private { background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok); border-radius: 10px; padding: 10px 14px; margin: 0 0 20px; font-size: 14px; }
   #drop {
     display: block;
     border: 2px dashed var(--line); border-radius: 12px; background: var(--panel);
@@ -73,7 +74,9 @@
 <body>
 <main>
   <h1>Indra OCR in the browser</h1>
-  <p class="lead">PDFs and images to markdown. Everything runs on your device; files are never uploaded.</p>
+  <p class="lead">PDFs and images to markdown.</p>
+  <p class="private"><strong>Your files stay on your device.</strong> The OCR runs entirely in your browser; no file, page or text is sent to any server.
+    The only downloads are the program and the models, once.</p>
 
   <label id="drop">
     <input id="file" type="file" accept=".pdf,image/*" multiple hidden>
