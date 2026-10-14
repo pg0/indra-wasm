@@ -19,7 +19,7 @@ self.onmessage = async ({ data: msg }) => {
       self.postMessage({ type: "ready", id: msg.id });
     } else if (msg.type === "page") {
       const ocr = await ready;
-      const page = await ocr.page({ data: msg.data, width: msg.width, height: msg.height }, { turn: msg.turn ?? true });
+      const page = await ocr.page({ data: msg.data, width: msg.width, height: msg.height }, { turn: msg.turn ?? true, tables: msg.tables ?? true });
       self.postMessage({ type: "page", id: msg.id, page: { ...page, text: page.text } });
     }
   } catch (e) {

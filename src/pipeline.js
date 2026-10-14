@@ -310,7 +310,7 @@ export class IndraOCR {
   }
 
   /** OCR of one grayscale page { data: Uint8Array, width, height }. */
-  async page(gray, { turn = true } = {}) {
+  async page(gray, { turn = true, tables = true } = {}) {
     const t = {};
     let t0 = now();
     const up = await this.upright(gray, turn);
@@ -321,7 +321,7 @@ export class IndraOCR {
     t0 = now();
     const { rec } = await this.recognize(up.gray, boxes);
     t.rec_ms = now() - t0;
-    const page = await this.assemble(up.gray.width, up.gray.height, boxes, rec, t);
+    const page = await this.assemble(up.gray.width, up.gray.height, boxes, rec, t, { tables });
     page.rotation = 90 * up.k;
     page.skew = Math.round(up.skew * 100) / 100;
     if (up.skew) {
@@ -332,7 +332,7 @@ export class IndraOCR {
     return page;
   }
 
-  async assemble(W, H, boxes0, rec0, t) {
+  async assemble(W, H, boxes0, rec0, t, { tables = true } = {}) {
     const t0 = now();
     const cuts = this.gutterCuts(boxes0, rec0);
     const boxes = [], rec = [];
@@ -351,7 +351,7 @@ export class IndraOCR {
     if (layout) {
       blocks = pageBlocks(boxes, texts, order, layout.cls, layout.C, layout.same);
       const cells = new Map(boxes.map((b, i) => [i, this.splitLine(b, rec[i][2], CELL_GAP).map(([bx, tx]) => [bx, tx])]));
-      markdown = pageMarkdown(boxes, texts, order, layout.cls, layout.C, layout.same, { keepFurniture: this.furniture, cells });
+      markdown = pageMarkdown(boxes, texts, order, layout.cls, layout.C, layout.same, { keepFurniture: this.furniture, cells, tables });
     } else if (boxes.length < 2) {
       markdown = texts.join("\n");
     }

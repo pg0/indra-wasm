@@ -44,7 +44,7 @@ async function imageGray(blob) {
   const ctx = c.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(bmp, 0, 0);
   bmp.close();
-  return toGray(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+  return { gray: toGray(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height), image: c };
 }
 
 async function* pdfPages(bytes, password) {
@@ -64,7 +64,8 @@ async function* pdfPages(bytes, password) {
       ctx.fillRect(0, 0, c.width, c.height);
       await page.render({ canvasContext: ctx, canvas: c, viewport: vp }).promise;
       page.cleanup();
-      yield { index: i - 1, count: doc.numPages, gray: toGray(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height) };
+      const gray = toGray(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+      yield { index: i - 1, count: doc.numPages, gray, image: c };
     }
   } finally {
     await task.destroy();
@@ -103,14 +104,19 @@ export class Indra {
   }
 
   /** OCR of one grayscale page { data: Uint8Array, width, height }. */
-  async page(gray, { turn = true } = {}) {
+  async page(gray, { turn = true, tables = true } = {}) {
     await this.ready;
-    const { page } = await this.call({ type: "page", data: gray.data, width: gray.width, height: gray.height, turn }, [gray.data.buffer]);
+    const { page } = await this.call({ type: "page", data: gray.data, width: gray.width, height: gray.height, turn, tables }, [gray.data.buffer]);
     return page;
   }
 
-  /** A PDF or image (File, Blob or ArrayBuffer) -> { markdown, pages }. */
-  async recognize(file, { password, maxPages } = {}) {
+  /**
+   * A PDF or image (File, Blob or ArrayBuffer) -> { markdown, pages }.
+   * tables: false writes tables as plain text rows instead of HTML.
+   * onPage({ index, count, page, image }) runs after each page; image is the
+   * page as rendered for OCR (a canvas), e.g. for a side-by-side preview.
+   */
+  async recognize(file, { password, maxPages, tables = true, onPage } = {}) {
     const bytes = new Uint8Array(file instanceof ArrayBuffer ? file : await file.arrayBuffer());
     const pages = [];
     if (isPdf(bytes)) {
@@ -123,16 +129,20 @@ export class Indra {
           // pdf.js renders the following page on this thread while the worker OCRs this one.
           next = it.next();
           next.catch(() => {});
-          const { index, count, gray } = value;
-          this.onProgress?.({ stage: "page", page: index + 1, pages: maxPages ? Math.min(count, maxPages) : count });
-          pages.push(await this.page(gray));
+          const { index, count, gray, image } = value;
+          const total = maxPages ? Math.min(count, maxPages) : count;
+          this.onProgress?.({ stage: "page", page: index + 1, pages: total });
+          pages.push(await this.page(gray, { tables }));
+          onPage?.({ index, count: total, page: pages[pages.length - 1], image });
         }
       } finally {
         await it.return();
       }
     } else {
       this.onProgress?.({ stage: "page", page: 1, pages: 1 });
-      pages.push(await this.page(await imageGray(new Blob([bytes]))));
+      const { gray, image } = await imageGray(new Blob([bytes]));
+      pages.push(await this.page(gray, { tables }));
+      onPage?.({ index: 0, count: 1, page: pages[0], image });
     }
     const markdown = pages.map((p) => p.markdown ?? p.text).join("\n\n") + "\n";
     return { markdown, pages };

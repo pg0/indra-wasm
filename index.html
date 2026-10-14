@@ -21,7 +21,7 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 900px; margin: 0 auto; padding: 32px 16px 48px; }
+  main { max-width: 1240px; margin: 0 auto; padding: 32px 16px 48px; }
   h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
   .lead { color: var(--muted); margin: 0 0 24px; }
   #drop {
@@ -48,6 +48,24 @@
     border: 1px solid var(--line); background: var(--panel); color: var(--text);
     font: 13px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
   }
+  .options { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .options label { font-size: 14px; display: flex; gap: 6px; align-items: center; margin-right: auto; cursor: pointer; }
+  button.on { border-color: var(--accent); background: var(--accent-soft); }
+  .file { font-size: 14px; color: var(--muted); margin: 18px 0 8px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+  .pair canvas { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .render {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 14px 18px;
+    overflow-x: auto; font-size: 14px; min-width: 0;
+  }
+  .render h2 { font-size: 17px; margin: 14px 0 6px; }
+  .render p { margin: 0 0 10px; }
+  .render table { border-collapse: collapse; margin: 6px 0 12px; font-size: 13px; }
+  .render th, .render td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  .render th { background: var(--accent-soft); }
+  .render .page-no { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  [hidden] { display: none !important; }
   footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
   footer a { color: inherit; }
 </style>
@@ -66,11 +84,15 @@
   <div id="status">Loading models…</div>
   <div class="bar"><div id="bar"></div></div>
 
-  <div class="tools">
+  <div class="options">
+    <label><input id="tables" type="checkbox" checked> Detect tables (HTML tables in the markdown)</label>
+    <button id="viewPages" class="on">Side by side</button>
+    <button id="viewText">Markdown</button>
     <button id="copy" disabled>Copy markdown</button>
     <button id="save" disabled>Download .md</button>
   </div>
-  <textarea id="out" spellcheck="false" placeholder="The markdown appears here."></textarea>
+  <div id="pages"></div>
+  <textarea id="out" spellcheck="false" placeholder="The markdown appears here." hidden></textarea>
 
   <footer>
     A JavaScript port of <a href="https://github.com/datalab-to/indra">indra-ocr</a> (Apache-2.0) on ONNX Runtime Web.
@@ -85,7 +107,7 @@
   const $ = (id) => document.getElementById(id);
   const status = (text, err = false) => { $("status").textContent = text; $("status").className = err ? "err" : ""; };
   const bar = (f) => { $("bar").style.width = `${Math.round(f * 100)}%`; };
-  let lastName = "ocr";
+  let lastName = "ocr", lastFiles = null, busy = false;
 
   const indra = new Indra({
     onProgress: (p) => {
@@ -95,13 +117,74 @@
   });
   indra.ready.then(() => status("Ready. Drop a file.")).catch((e) => status(`Could not load the models: ${e.message}`, true));
 
+  // Rebuilt from text and attributes only, so markup in OCR'd text never runs.
+  function safeTable(html) {
+    const src = new DOMParser().parseFromString(html, "text/html").querySelector("table");
+    const table = document.createElement("table");
+    for (const tr of src?.rows ?? []) {
+      const row = table.insertRow();
+      for (const cell of tr.cells) {
+        const c = document.createElement(cell.tagName === "TH" ? "th" : "td");
+        c.textContent = cell.textContent;
+        if (cell.colSpan > 1) c.colSpan = cell.colSpan;
+        row.append(c);
+      }
+    }
+    return table;
+  }
+
+  // The markdown this pipeline writes: "## " headings, HTML tables, paragraphs.
+  function render(md) {
+    const root = document.createElement("div");
+    for (const block of md.split(/\n{2,}/)) {
+      const b = block.trim();
+      if (!b) continue;
+      if (b.startsWith("<table>")) { root.append(safeTable(b)); continue; }
+      const el = document.createElement(b.startsWith("## ") ? "h2" : "p");
+      (b.startsWith("## ") ? b.slice(3) : b).split("\n").forEach((line, i) => {
+        if (i) el.append(document.createElement("br"));
+        el.append(line);
+      });
+      root.append(el);
+    }
+    return root;
+  }
+
+  function showPage({ index, count, page, image }) {
+    const pair = document.createElement("div");
+    pair.className = "pair";
+    const c = document.createElement("canvas");
+    const s = Math.min(1, 1200 / image.width);
+    c.width = Math.round(image.width * s);
+    c.height = Math.round(image.height * s);
+    c.getContext("2d").drawImage(image, 0, 0, c.width, c.height);
+    const out = document.createElement("div");
+    out.className = "render";
+    const no = document.createElement("div");
+    no.className = "page-no";
+    no.textContent = `Page ${index + 1} of ${count}`;
+    out.append(no, render(page.markdown ?? page.text));
+    pair.append(c, out);
+    $("pages").append(pair);
+  }
+
   async function run(files) {
+    if (busy || !files.length) return;
+    busy = true;
+    lastFiles = files;
+    $("pages").replaceChildren();
+    $("out").value = "";
+    $("copy").disabled = $("save").disabled = true;
     const out = [];
     for (const f of files) {
       lastName = f.name.replace(/\.[^.]+$/, "");
+      const head = document.createElement("div");
+      head.className = "file";
+      head.textContent = f.name;
+      $("pages").append(head);
       const t0 = performance.now();
       try {
-        const { markdown, pages } = await indra.recognize(f);
+        const { markdown, pages } = await indra.recognize(f, { tables: $("tables").checked, onPage: showPage });
         out.push(files.length > 1 ? `<!-- ${f.name} -->\n\n${markdown}` : markdown);
         status(`${f.name}: ${pages.length} page${pages.length > 1 ? "s" : ""} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       } catch (e) {
@@ -111,7 +194,19 @@
     }
     bar(1);
     $("copy").disabled = $("save").disabled = !$("out").value;
+    busy = false;
   }
+
+  const view = (text) => {
+    $("out").hidden = !text;
+    $("pages").hidden = text;
+    $("viewText").classList.toggle("on", text);
+    $("viewPages").classList.toggle("on", !text);
+  };
+  $("viewPages").onclick = () => view(false);
+  $("viewText").onclick = () => view(true);
+  // Table detection changes the markdown, so the last files are read again.
+  $("tables").onchange = () => lastFiles && run(lastFiles);
 
   // Cleared so that choosing the same file again fires change.
   $("file").onchange = (e) => { run([...e.target.files]); e.target.value = ""; };

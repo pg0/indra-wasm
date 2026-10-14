@@ -10,7 +10,7 @@ Any static file server works:
 npx serve .          # or: python -m http.server
 ```
 
-Open the page, drop a PDF or an image, and copy or download the markdown. On the first run the models download from Hugging Face: about 9 MB for Latin text, plus 9 MB the first time a page holds Chinese. The browser caches them after that.
+Open the page and drop a PDF or an image. Each page appears next to its rendered result; the markdown can be copied or downloaded, and table detection can be switched off. On the first run the models download from Hugging Face: about 9 MB for Latin text, plus 9 MB the first time a page holds Chinese. The browser caches them after that.
 
 In your own page:
 
@@ -20,6 +20,7 @@ import { Indra } from "./src/indra.js";
 const indra = new Indra({ onProgress: (p) => console.log(p) });
 const { markdown, pages } = await indra.recognize(file); // File, Blob or ArrayBuffer
 // pages[i]: { markdown, lines: [{ box, text, conf }], blocks, rotation, skew, timings }
+// options: { tables: false } writes tables as plain text rows; onPage({ index, page, image }) runs per page
 ```
 
 OCR runs in a web worker. PDF pages are rendered with pdf.js at 200 dpi. ONNX Runtime Web and pdf.js load from jsDelivr at pinned versions (1.30.0 and 6.3.289).

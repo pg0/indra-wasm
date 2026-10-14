@@ -169,8 +169,16 @@ export function pageBlocks(boxes, texts, order, cls, C, same) {
   }));
 }
 
-/** Markdown for one page. cells: line index -> [[box, text]] when a line holds several cells. */
-export function pageMarkdown(boxes, texts, order, cls, C, same, { keepFurniture = false, cells = null } = {}) {
+/** A table as plain text: one line per row, cells separated by two spaces. */
+export function tableText(boxes, texts) {
+  return mergeWrapped(tableRows(boxes), boxes).map((r) => r.map((k) => texts[k]).join("  ")).join("\n");
+}
+
+/**
+ * Markdown for one page. cells: line index -> [[box, text]] when a line holds
+ * several cells. tables: false writes table blocks as plain text rows.
+ */
+export function pageMarkdown(boxes, texts, order, cls, C, same, { keepFurniture = false, cells = null, tables = true } = {}) {
   const n = boxes.length;
   const parts = [];
   for (const blk of splitBlocks(order, same, n)) {
@@ -189,7 +197,7 @@ export function pageMarkdown(boxes, texts, order, cls, C, same, { keepFurniture 
         const list = cells?.get(i)?.length ? cells.get(i) : [[boxes[i], texts[i]]];
         for (const [bx, tx] of list) { cb.push(bx.map(Math.fround)); ct.push(tx); }
       }
-      parts.push(tableHtml(cb, ct));
+      parts.push(tables ? tableHtml(cb, ct) : tableText(cb, ct));
     } else if (c === LIST) {
       const items = [];
       for (const t of tb) {
