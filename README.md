@@ -10,7 +10,7 @@ Any static file server works:
 npx serve .          # or: python -m http.server
 ```
 
-Open the page and drop a PDF or an image. Each page appears next to its rendered result; the markdown can be copied or downloaded, and table detection can be switched off. On the first run the models download from Hugging Face: about 9 MB for Latin text, plus 9 MB the first time a page holds Chinese. The browser caches them after that.
+Open the page and drop a PDF or an image. Each page appears next to its rendered result, optionally with the line and block boxes drawn on it. The markdown can be copied or downloaded, everything else (boxes, block labels, confidences) downloads as JSON, and table detection can be switched off. On the first run the models download from Hugging Face: about 9 MB for Latin text, plus 9 MB the first time a page holds Chinese. The browser caches them after that.
 
 In your own page:
 

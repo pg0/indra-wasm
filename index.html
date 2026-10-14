@@ -50,7 +50,8 @@
     font: 13px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
   }
   .options { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  .options label { font-size: 14px; display: flex; gap: 6px; align-items: center; margin-right: auto; cursor: pointer; }
+  .options label { font-size: 14px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .options label.boxes { margin-right: auto; }
   button.on { border-color: var(--accent); background: var(--accent-soft); }
   .file { font-size: 14px; color: var(--muted); margin: 18px 0 8px; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
@@ -89,10 +90,12 @@
 
   <div class="options">
     <label><input id="tables" type="checkbox" checked> Detect tables (HTML tables in the markdown)</label>
+    <label class="boxes"><input id="boxes" type="checkbox"> Show boxes</label>
     <button id="viewPages" class="on">Side by side</button>
     <button id="viewText">Markdown</button>
     <button id="copy" disabled>Copy markdown</button>
     <button id="save" disabled>Download .md</button>
+    <button id="json" disabled>Download .json</button>
   </div>
   <div id="pages"></div>
   <textarea id="out" spellcheck="false" placeholder="The markdown appears here." hidden></textarea>
@@ -110,7 +113,8 @@
   const $ = (id) => document.getElementById(id);
   const status = (text, err = false) => { $("status").textContent = text; $("status").className = err ? "err" : ""; };
   const bar = (f) => { $("bar").style.width = `${Math.round(f * 100)}%`; };
-  let lastName = "ocr", lastFiles = null, busy = false;
+  let lastName = "ocr", lastFiles = null, busy = false, results = [];
+  const shown = [];
 
   const indra = new Indra({
     onProgress: (p) => {
@@ -153,14 +157,40 @@
     return root;
   }
 
+  // Boxes are in pixels of the page after it was turned upright, so the
+  // preview is turned the same way (page.rotation, clockwise).
+  function draw({ c, image, page }) {
+    const rot = page.rotation ?? 0;
+    const swap = rot === 90 || rot === 270;
+    const W = swap ? image.height : image.width, H = swap ? image.width : image.height;
+    const s = Math.min(1, 1200 / W);
+    c.width = Math.round(W * s);
+    c.height = Math.round(H * s);
+    const ctx = c.getContext("2d");
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate((rot * Math.PI) / 180);
+    ctx.drawImage(image, -image.width / 2, -image.height / 2);
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    if (!$("boxes").checked) return;
+    ctx.lineWidth = 1.5 / s;
+    ctx.font = `${12 / s}px system-ui, sans-serif`;
+    ctx.strokeStyle = ctx.fillStyle = "rgba(37, 99, 235, 0.8)";
+    for (const { label, bbox: [x0, y0, x1, y1] } of page.blocks ?? []) {
+      ctx.strokeRect(x0 - 4 / s, y0 - 4 / s, x1 - x0 + 8 / s, y1 - y0 + 8 / s);
+      ctx.fillText(label, x0 - 4 / s, y0 - 7 / s);
+    }
+    ctx.strokeStyle = "rgba(194, 65, 12, 0.9)";
+    for (const { box: [x0, y0, x1, y1] } of page.lines) ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  }
+
   function showPage({ index, count, page, image }) {
     const pair = document.createElement("div");
     pair.className = "pair";
     const c = document.createElement("canvas");
-    const s = Math.min(1, 1200 / image.width);
-    c.width = Math.round(image.width * s);
-    c.height = Math.round(image.height * s);
-    c.getContext("2d").drawImage(image, 0, 0, c.width, c.height);
+    const entry = { c, image, page };
+    shown.push(entry);
+    draw(entry);
     const out = document.createElement("div");
     out.className = "render";
     const no = document.createElement("div");
@@ -176,8 +206,10 @@
     busy = true;
     lastFiles = files;
     $("pages").replaceChildren();
+    shown.length = 0;
+    results = [];
     $("out").value = "";
-    $("copy").disabled = $("save").disabled = true;
+    $("copy").disabled = $("save").disabled = $("json").disabled = true;
     const out = [];
     for (const f of files) {
       lastName = f.name.replace(/\.[^.]+$/, "");
@@ -189,6 +221,7 @@
       try {
         const { markdown, pages } = await indra.recognize(f, { tables: $("tables").checked, onPage: showPage });
         out.push(files.length > 1 ? `<!-- ${f.name} -->\n\n${markdown}` : markdown);
+        results.push({ file: f.name, pages });
         status(`${f.name}: ${pages.length} page${pages.length > 1 ? "s" : ""} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
       } catch (e) {
         status(`${f.name}: ${e.message}`, true);
@@ -197,6 +230,7 @@
     }
     bar(1);
     $("copy").disabled = $("save").disabled = !$("out").value;
+    $("json").disabled = !results.length;
     busy = false;
   }
 
@@ -210,6 +244,7 @@
   $("viewText").onclick = () => view(true);
   // Table detection changes the markdown, so the last files are read again.
   $("tables").onchange = () => lastFiles && run(lastFiles);
+  $("boxes").onchange = () => shown.forEach(draw);
 
   // Cleared so that choosing the same file again fires change.
   $("file").onchange = (e) => { run([...e.target.files]); e.target.value = ""; };
@@ -218,13 +253,19 @@
   drop.ondragleave = () => drop.classList.remove("over");
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); run([...e.dataTransfer.files]); };
   $("copy").onclick = () => navigator.clipboard.writeText($("out").value);
-  $("save").onclick = () => {
+  const download = (text, type, name) => {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([$("out").value], { type: "text/markdown" }));
-    a.download = `${lastName}.md`;
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+  $("save").onclick = () => download($("out").value, "text/markdown", `${lastName}.md`);
+  // Per page: lines { box, text, conf }, blocks { label, bbox, text }, rotation,
+  // skew, timings. Boxes are [x0, y0, x1, y1] in pixels of the upright page
+  // (200 dpi for PDFs).
+  $("json").onclick = () =>
+    download(JSON.stringify(results.length > 1 ? results : results[0], null, 1), "application/json", `${lastName}.json`);
 </script>
 </body>
 </html>
