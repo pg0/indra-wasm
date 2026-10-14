@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indra OCR in the browser</title>
+<meta name="description" content="PDFs and images to markdown, in your browser. Nothing is uploaded.">
+<script src="coi.js"></script>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #e2e2dd;
+    --accent: #c2410c; --accent-soft: #fdeee6; --ok: #15803d; --err: #b91c1c;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --panel: #1f1f1d; --text: #ecece8; --muted: #9a9a93; --line: #34342f;
+      --accent: #fb923c; --accent-soft: #3a2418; --ok: #4ade80; --err: #f87171;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .lead { color: var(--muted); margin: 0 0 24px; }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 12px; background: var(--panel);
+    padding: 36px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #drop.over, #drop:hover { border-color: var(--accent); background: var(--accent-soft); }
+  #drop strong { display: block; font-size: 17px; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 14px; }
+  #status { min-height: 24px; margin: 14px 0 8px; color: var(--muted); font-size: 14px; }
+  #status.err { color: var(--err); }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 16px; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  button {
+    font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  textarea {
+    width: 100%; min-height: 360px; resize: vertical; padding: 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    font: 13px/1.55 ui-monospace, "Cascadia Code", Consolas, monospace;
+  }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Indra OCR in the browser</h1>
+  <p class="lead">PDFs and images to markdown. Everything runs on your device; files are never uploaded.</p>
+
+  <label id="drop">
+    <input id="file" type="file" accept=".pdf,image/*" multiple hidden>
+    <strong>Drop PDFs or images here</strong>
+    <span>or click to choose. The models (about 9 MB, plus 9 MB for Chinese) download once.</span>
+  </label>
+
+  <div id="status">Loading models…</div>
+  <div class="bar"><div id="bar"></div></div>
+
+  <div class="tools">
+    <button id="copy" disabled>Copy markdown</button>
+    <button id="save" disabled>Download .md</button>
+  </div>
+  <textarea id="out" spellcheck="false" placeholder="The markdown appears here."></textarea>
+
+  <footer>
+    A JavaScript port of <a href="https://github.com/datalab-to/indra">indra-ocr</a> (Apache-2.0) on ONNX Runtime Web.
+    The model weights load from <a href="https://huggingface.co/datalab-to/indra-ocr">datalab-to/indra-ocr</a> under their
+    <a href="https://huggingface.co/datalab-to/indra-ocr/blob/v3.1/LICENSE">modified OpenRAIL-M license</a>, which restricts commercial use.
+    Not affiliated with Datalab.
+  </footer>
+</main>
+<script type="module">
+  import { Indra } from "./src/indra.js";
+
+  const $ = (id) => document.getElementById(id);
+  const status = (text, err = false) => { $("status").textContent = text; $("status").className = err ? "err" : ""; };
+  const bar = (f) => { $("bar").style.width = `${Math.round(f * 100)}%`; };
+  let lastName = "ocr";
+
+  const indra = new Indra({
+    onProgress: (p) => {
+      if (p.stage === "model" && p.state === "download") status(`Downloading ${p.name}…`);
+      if (p.stage === "page") { status(`Reading page ${p.page} of ${p.pages}…`); bar((p.page - 1) / p.pages); }
+    },
+  });
+  indra.ready.then(() => status("Ready. Drop a file.")).catch((e) => status(`Could not load the models: ${e.message}`, true));
+
+  async function run(files) {
+    const out = [];
+    for (const f of files) {
+      lastName = f.name.replace(/\.[^.]+$/, "");
+      const t0 = performance.now();
+      try {
+        const { markdown, pages } = await indra.recognize(f);
+        out.push(files.length > 1 ? `<!-- ${f.name} -->\n\n${markdown}` : markdown);
+        status(`${f.name}: ${pages.length} page${pages.length > 1 ? "s" : ""} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+      } catch (e) {
+        status(`${f.name}: ${e.message}`, true);
+      }
+      $("out").value = out.join("\n");
+    }
+    bar(1);
+    $("copy").disabled = $("save").disabled = !$("out").value;
+  }
+
+  $("file").onchange = (e) => run([...e.target.files]);
+  const drop = $("drop");
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); run([...e.dataTransfer.files]); };
+  $("copy").onclick = () => navigator.clipboard.writeText($("out").value);
+  $("save").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([$("out").value], { type: "text/markdown" }));
+    a.download = `${lastName}.md`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+</script>
+</body>
+</html>

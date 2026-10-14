@@ -1,0 +1,14 @@
+{
+  "name": "indra-wasm",
+  "version": "0.1.0",
+  "description": "Indra OCR in the browser: the indra-ocr pipeline ported to JavaScript on ONNX Runtime Web",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "models": "node test/fetch-models.mjs",
+    "test": "node test/parity.mjs"
+  },
+  "devDependencies": {
+    "onnxruntime-web": "1.30.0"
+  }
+}

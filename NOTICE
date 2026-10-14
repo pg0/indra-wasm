@@ -1,0 +1,12 @@
+indra-wasm
+Copyright 2026 Red Coral Studios GmbH
+
+This product includes software derived from indra-ocr
+(https://github.com/datalab-to/indra), Copyright Datalab, licensed under the
+Apache License, Version 2.0. The files src/preproc.js, src/order.js,
+src/layout.js, src/pipeline.js and src/vocab.js are JavaScript ports of
+indra-ocr 0.3.1 modules; each names its source module in its first line.
+
+The model weights are not part of this project. They are downloaded at run
+time from https://huggingface.co/datalab-to/indra-ocr and are licensed by
+Datalab under a modified OpenRAIL-M license with use-based restrictions.

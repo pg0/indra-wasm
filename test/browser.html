@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>indra-wasm browser check</title>
+<script src="../coi.js"></script>
+<script type="module">
+  // Runs the full browser path (pdf.js render, worker, models from Hugging Face)
+  // on ?file=... and POSTs the result back to the test server.
+  import { Indra } from "../src/indra.js";
+  const file = new URLSearchParams(location.search).get("file");
+  const report = (o) => fetch("/result", { method: "POST", body: JSON.stringify(o) });
+  try {
+    const t0 = performance.now();
+    const indra = new Indra();
+    await indra.ready;
+    const t1 = performance.now();
+    const blob = await (await fetch(file)).blob();
+    const { markdown, pages } = await indra.recognize(blob);
+    await report({ ok: true, load_ms: t1 - t0, ocr_ms: performance.now() - t1, pages: pages.length,
+      isolated: self.crossOriginIsolated, markdown, timings: pages.map((p) => p.timings) });
+  } catch (e) {
+    await report({ ok: false, error: String(e?.stack ?? e) });
+  }
+</script>
