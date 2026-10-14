@@ -25,6 +25,7 @@
   h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
   .lead { color: var(--muted); margin: 0 0 24px; }
   #drop {
+    display: block;
     border: 2px dashed var(--line); border-radius: 12px; background: var(--panel);
     padding: 36px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
   }
@@ -112,7 +113,8 @@
     $("copy").disabled = $("save").disabled = !$("out").value;
   }
 
-  $("file").onchange = (e) => run([...e.target.files]);
+  // Cleared so that choosing the same file again fires change.
+  $("file").onchange = (e) => { run([...e.target.files]); e.target.value = ""; };
   const drop = $("drop");
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
   drop.ondragleave = () => drop.classList.remove("over");
@@ -123,7 +125,7 @@
     a.href = URL.createObjectURL(new Blob([$("out").value], { type: "text/markdown" }));
     a.download = `${lastName}.md`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
 </script>
 </body>
